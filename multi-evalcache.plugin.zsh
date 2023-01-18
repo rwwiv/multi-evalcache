@@ -1,3 +1,4 @@
+#!/usr/bin/env zsh
 # Inspired by https://github.com/mroth/evalcache
 
 # default cache directory
@@ -5,10 +6,10 @@ export ZSH_MULTI_EVALCACHE_DIR=${ZSH_MULTI_EVALCACHE_DIR:-"$HOME/.zsh-multi-eval
 
 function _multi_ec_start() {
   [ "$ZSH_EVALCACHE_DISABLE" = "true" ] && return 0
-  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.sh"
+  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.zsh"
 
   [ -d "$ZSH_MULTI_EVALCACHE_DIR" ] && mkdir -p "$ZSH_MULTI_EVALCACHE_DIR"
-  touch "$cacheFile"
+  printf "%s\n" "#!/usr/bin/env zsh" >>"$cacheFile"
 }
 
 # Usage: __single_ec <cache file> <id string> <command> <arguments ...>
@@ -24,7 +25,7 @@ function __single_ec() {
 
 # Usage: __single_ec <command> <arguments ...>
 function _multi_ec() {
-  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.sh"
+  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.zsh"
   local idString="# $*"
 
   if [ "$ZSH_EVALCACHE_DISABLE" = "true" ]; then
@@ -37,7 +38,7 @@ function _multi_ec() {
         return 1
       fi
       # Return immediately if the eval is already in the full cache file
-      if [ -f "$cacheFile" ] && [ $(grep -c "\b$idString\b" "$cacheFile") -gt 0 ]; then
+      if [ $(/usr/bin/grep -c "\b$idString\b" "$cacheFile") -gt 0 ]; then
         return 0
       fi
       __single_ec "$cacheFile" "$idString" "$@"
@@ -50,7 +51,7 @@ function _multi_ec() {
 
 function _multi_ec_end() {
   [ "$ZSH_EVALCACHE_DISABLE" = "true" ] && return 0
-  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.sh"
+  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.zsh"
 
   [ -s "$cacheFile" ] && source "$cacheFile" || echo "Could not source $cacheFile"
 }
@@ -62,21 +63,24 @@ function _multi_ec_clear() {
     f)
       force=true
       ;;
+    *)
+      force=false
+      ;;
     esac
   done
   shift $((OPTIND - 1))
 
   if [ "$force" = true ]; then
-    rm -f "$ZSH_MULTI_EVALCACHE_DIR"/init-*.sh
+    rm -f "$ZSH_MULTI_EVALCACHE_DIR"/init-*.zsh
   else
-    rm -i "$ZSH_MULTI_EVALCACHE_DIR"/init-*.sh
+    rm -i "$ZSH_MULTI_EVALCACHE_DIR"/init-*.zsh
   fi
 }
 
 # Interop function to maintain backwards compat with evalcache
 # Usage: _evalcache <command> <arguments ...>
 function _evalcache() {
-  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.sh"
+  local cacheFile="$ZSH_MULTI_EVALCACHE_DIR/init-${1##*/}.zsh"
   local ecRes
 
   if [ "$ZSH_EVALCACHE_DISABLE" = "true" ]; then
@@ -84,8 +88,11 @@ function _evalcache() {
   else
     if type "$1" >/dev/null; then
       mkdir -p "$ZSH_MULTI_EVALCACHE_DIR"
-      [ ! -f "$cacheFile" ] && __single_ec "$cacheFile" "# $*" "$@" || ecRes=0
-      ecRes=$?
+      if [ ! -f "$cacheFile" ]; then
+        printf "%s\n" "#!/usr/bin/env zsh" >>"$cacheFile"
+        __single_ec "$cacheFile" "# $*" "$@" || ecRes=1
+        ecRes=$?
+      fi
     else
       echo "multi-evalcache ERROR: $1 is not installed or in PATH"
     fi
